@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="./icon.png" type="image/png"/>
   <title>EVA AI — Human vs Robot</title>
   <style>
     :root{
@@ -238,6 +239,21 @@
     }
     .send.human{background:var(--lilac)}
     .send.robot{background:var(--aqua)}
+
+    /* The two modes are separate interfaces, not one shared conversation. */
+    #humanChat{
+      background:linear-gradient(180deg,rgba(233,222,248,.10),transparent 35%);
+      border-radius:18px;
+    }
+
+    #robotChat{
+      background:linear-gradient(180deg,rgba(217,244,239,.12),transparent 35%);
+      border-radius:18px;
+    }
+
+    .chat{
+      transition:background .2s ease;
+    }
     .send:hover{transform:translateY(-1px)}
     .send:disabled{opacity:.45;cursor:not-allowed;transform:none}
 
@@ -336,26 +352,38 @@
 
     <main>
       <div class="mode-switch" role="tablist" aria-label="Choose an AI">
-        <button class="mode active human" id="humanBtn" onclick="setMode('human')" role="tab">
+        <button class="mode active human" id="humanBtn" onclick="setMode('human')" role="tab" aria-selected="true">
           <span class="mode-icon">♡</span>
           <span>Emotional AI</span>
         </button>
-        <button class="mode robot" id="robotBtn" onclick="setMode('robot')" role="tab">
+        <button class="mode robot" id="robotBtn" onclick="setMode('robot')" role="tab" aria-selected="false">
           <span class="mode-icon">⚙</span>
           <span>Robotic AI</span>
         </button>
       </div>
 
-      <section class="chat" id="chat" aria-live="polite">
-        <div class="welcome" id="welcome">
+      <section class="chat active-chat" id="humanChat" aria-live="polite">
+        <div class="welcome" id="humanWelcome">
           <div class="welcome-card">
-            <div class="welcome-symbol">✦</div>
-            <h1>Talk to two different minds.</h1>
+            <div class="welcome-symbol">♡</div>
+            <h1>Emotional AI</h1>
             <p>
-              Choose the <b>Emotional AI</b> to explore a warm, empathetic response,
-              or the <b>Robotic AI</b> to see a direct, pragmatic response.
+              Ask a question and explore a warmer, more empathetic response.
             </p>
-            <div class="hint">Try a short question in English ✨</div>
+            <div class="hint">This is the Emotional AI chat ✨</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="chat" id="robotChat" aria-live="polite" style="display:none">
+        <div class="welcome" id="robotWelcome">
+          <div class="welcome-card">
+            <div class="welcome-symbol">⚙</div>
+            <h1>Robotic AI</h1>
+            <p>
+              Ask a question and receive a direct, pragmatic response.
+            </p>
+            <div class="hint">This is the Robotic AI chat ⚙</div>
           </div>
         </div>
       </section>
@@ -367,7 +395,7 @@
             aria-label="Your message"></textarea>
           <button class="send human" id="sendBtn" onclick="sendMessage()" aria-label="Send message">↑</button>
         </div>
-        <div class="composer-note">Short prompts work best · Maximum 10 words</div>
+        <div class="composer-note">Each AI has its own separate conversation · Maximum 20 words</div>
       </div>
     </main>
   </div>
@@ -393,7 +421,8 @@
     let isSending = false;
 
     const promptEl = document.getElementById("prompt");
-    const chat = document.getElementById("chat");
+    const humanChat = document.getElementById("humanChat");
+    const robotChat = document.getElementById("robotChat");
     const sendBtn = document.getElementById("sendBtn");
     const statusEl = document.getElementById("status");
     const loginOverlay = document.getElementById("loginOverlay");
@@ -421,14 +450,37 @@
 
       document.getElementById("humanBtn").classList.toggle("active", mode === "human");
       document.getElementById("robotBtn").classList.toggle("active", mode === "robot");
+      document.getElementById("humanBtn").setAttribute("aria-selected", mode === "human");
+      document.getElementById("robotBtn").setAttribute("aria-selected", mode === "robot");
       sendBtn.className = "send " + mode;
+
+      // Each mode has its own independent chat.
+      humanChat.style.display = mode === "human" ? "block" : "none";
+      robotChat.style.display = mode === "robot" ? "block" : "none";
 
       promptEl.placeholder = mode === "human"
         ? "Ask the Emotional AI something short…"
         : "Ask the Robotic AI something short…";
+
+      // Put the cursor in the current chat's composer.
+      promptEl.focus();
+
+      // Keep the selected chat scrolled to the latest message.
+      const activeChat = mode === "human" ? humanChat : robotChat;
+      activeChat.scrollTop = activeChat.scrollHeight;
+    }
+
+    function getActiveChat(){
+      return currentMode === "human" ? humanChat : robotChat;
     }
 
     function addMessage(type, text, mode){
+      const activeChat = mode === "human" ? humanChat : robotChat;
+
+      // Remove the welcome screen as soon as that mode receives its first message.
+      const welcome = activeChat.querySelector(".welcome");
+      if(welcome) welcome.remove();
+
       const wrap = document.createElement("div");
       wrap.className = "message " + type;
 
@@ -444,15 +496,18 @@
         wrap.querySelector(".bubble").textContent = text;
       }
 
-      chat.appendChild(wrap);
-      chat.scrollTop = chat.scrollHeight;
+      activeChat.appendChild(wrap);
+      activeChat.scrollTop = activeChat.scrollHeight;
       return wrap;
     }
 
     function addTyping(mode){
+      const activeChat = mode === "human" ? humanChat : robotChat;
+
       const wrap = document.createElement("div");
       wrap.className = "message ai";
-      wrap.id = "typingMessage";
+      wrap.id = "typingMessage-" + mode;
+
       const icon = mode === "human" ? "♡" : "⚙";
       wrap.innerHTML = `
         <div class="avatar ${mode}">${icon}</div>
@@ -460,16 +515,24 @@
           <span class="typing"><span></span><span></span><span></span></span>
         </div>
       `;
-      chat.appendChild(wrap);
-      chat.scrollTop = chat.scrollHeight;
+
+      activeChat.appendChild(wrap);
+      activeChat.scrollTop = activeChat.scrollHeight;
+    }
+
+    function removeTyping(mode){
+      document.getElementById("typingMessage-" + mode)?.remove();
     }
 
     function addSystemMessage(title, message){
+      const activeChat = getActiveChat();
+
       const card = document.createElement("div");
       card.className = "system-card";
       card.innerHTML = `<strong>${escapeHTML(title)}</strong><br>${escapeHTML(message)}`;
-      chat.appendChild(card);
-      chat.scrollTop = chat.scrollHeight;
+
+      activeChat.appendChild(card);
+      activeChat.scrollTop = activeChat.scrollHeight;
     }
 
     function escapeHTML(text){
@@ -485,8 +548,8 @@
     function validatePrompt(prompt){
       const words = prompt.trim().split(/\s+/).filter(Boolean);
       if(!prompt.trim()) return "Tell me something first — even a few words are enough. ✨";
-      if(words.length > 10){
-        return "Let’s keep this experiment small and focused. Please try a question with 10 words or fewer. 🌿";
+      if(words.length > 20){
+        return "Let’s keep this experiment small and focused. Please try a question with 20 words or fewer. 🌿";
       }
       return null;
     }
@@ -535,7 +598,7 @@
 
       isSending = true;
       sendBtn.disabled = true;
-      addMessage("user", prompt);
+      addMessage("user", prompt, currentMode);
       promptEl.value = "";
       autoResize();
       addTyping(currentMode);
@@ -564,7 +627,7 @@
         let data = {};
         try { data = await response.json(); } catch {}
 
-        document.getElementById("typingMessage")?.remove();
+        removeTyping(currentMode);
 
         if(response.ok){
           const answer = data.response || "The AI returned an empty response.";
@@ -576,7 +639,7 @@
           setStatus("Ready to try again");
         }
       } catch(error){
-        document.getElementById("typingMessage")?.remove();
+        removeTyping(currentMode);
 
         if(error.name === "AbortError"){
           addSystemMessage(
